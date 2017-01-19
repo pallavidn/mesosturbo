@@ -1,0 +1,9 @@
+{
+    "MarathonIP": "10.10.174.91",
+    "MarathonPort": "8080",
+    "MesosIP": "10.10.174.91",
+    "MesosPort": "5050",
+    "ActionIP": "10.10.174.96",
+    "ActionPort": "5000",
+    "SlavePort": "5051"
+}

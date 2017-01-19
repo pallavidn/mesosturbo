@@ -1,0 +1,4 @@
+{
+  "ProbeCategory": "CloudNative",
+  "ProbeType": "MesosProbe"
+}
