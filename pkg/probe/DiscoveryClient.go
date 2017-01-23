@@ -12,12 +12,12 @@ import (
 
 	"github.com/golang/glog"
 
-	mesoshttp "github.com/turbonomic/mesosturbo/pkg/mesoshttp"
 	proto "github.com/turbonomic/turbo-go-sdk/pkg/proto"
 	probe "github.com/turbonomic/turbo-go-sdk/pkg/probe"
 	builder "github.com/turbonomic/turbo-go-sdk/pkg/builder"
 
 	conf "github.com/turbonomic/mesosturbo/pkg/conf"
+	mesoshttp "github.com/turbonomic/mesosturbo/pkg/mesoshttp"
 	"github.com/turbonomic/mesosturbo/pkg/util"
 )
 

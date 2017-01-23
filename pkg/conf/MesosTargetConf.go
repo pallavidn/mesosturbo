@@ -27,7 +27,7 @@ type MesosTargetConf struct {
 // Create a new MesosClientConf from file. Other fields have default values and can be overrided.
 func NewMesosTargetConf(targetConfigFilePath string) (*MesosTargetConf, error) {
 
-	fmt.Println("[MesosClientConf] Now read configration from %s", targetConfigFilePath)
+	fmt.Println("[MesosClientConf] Target configuration from %s", targetConfigFilePath)
 	metaConfig := readConfig(targetConfigFilePath)
 
 	if metaConfig.DCOS_Username != "" && metaConfig.DCOS_Password != "" {
@@ -64,9 +64,9 @@ func readConfig(path string) *MesosTargetConf {
 	err := json.Unmarshal(file, &config)
 
 	if err != nil {
-		fmt.Printf("Unmarshall error :%v\n", err)
+		fmt.Printf("[MesosTargetConf] Unmarshall error :%v\n", err)
 	}
-	fmt.Printf("Results: %+v\n", config)
+	fmt.Printf("[MesosTargetConf] Results: %+v\n", config)
 
 	return &config
 }
