@@ -5,15 +5,24 @@ import (
 
 	// turbo sdk imports
 	supplychain "github.com/turbonomic/turbo-go-sdk/pkg/supplychain"
-	"github.com/turbonomic/turbo-go-sdk/pkg/probe"
 	proto "github.com/turbonomic/turbo-go-sdk/pkg/proto"
+	builder "github.com/turbonomic/turbo-go-sdk/pkg/builder"
+	"github.com/turbonomic/mesosturbo/pkg/conf"
+	"github.com/turbonomic/turbo-go-sdk/pkg/probe"
 )
 
 
 // Registration Client for the Mesos Probe
 // Implements the TurboRegistrationClient interface
 type MesosRegistrationClient struct {
+	mesosMasterType 	 conf.MesosMasterType
+}
 
+func NewRegistrationClient (mesosMasterType conf.MesosMasterType) probe.TurboRegistrationClient {
+	client := &MesosRegistrationClient{
+		mesosMasterType: mesosMasterType,
+	}
+	return client
 }
 
 var (
@@ -44,7 +53,7 @@ var (
 	transactionTemplateCommWithKey *proto.TemplateCommodity = &proto.TemplateCommodity{CommodityType: &transactionType, Key: &fakeKey}
 )
 
-func (myProbe *MesosRegistrationClient) GetSupplyChainDefinition() []*proto.TemplateDTO {
+func (registrationClient *MesosRegistrationClient) GetSupplyChainDefinition() []*proto.TemplateDTO {
 	fmt.Println("[MesosRegistrationClient] .......... Now use builder to create a supply chain ..........")
 
 	// VM Node
@@ -124,7 +133,6 @@ func (myProbe *MesosRegistrationClient) GetSupplyChainDefinition() []*proto.Temp
 	vmNode, _ := slaveSupplyChainNodeBuilder.Create()
 
 	supplyChainBuilder := supplychain.NewSupplyChainBuilder()
-	//	supplyChainBuilder.Top(vAppSupplyChainNodeBuilder)
 	supplyChainBuilder.
 			Top(appNode).
 			Entity(containerNode).
@@ -134,35 +142,89 @@ func (myProbe *MesosRegistrationClient) GetSupplyChainDefinition() []*proto.Temp
 	return supplychain
 }
 
+func (registrationClient *MesosRegistrationClient) GetIdentifyingFields() string {
+	return string(MasterIP)
+}
 
-// TODO, rephrase comment.
-// create account definition for mesos, which is used later to create mesos probe.
 // The return type is a list of ProbeInfo_AccountDefProp.
 // For a valid definition, targetNameIdentifier, username and password should be contained.
-//func createAccountDefMesos() []*proto.AccountDefEntry {
-func (myProbe *MesosRegistrationClient) GetAccountDefinition() []*proto.AccountDefEntry {
+// Account Definition for Mesos Probe
+func (registrationClient *MesosRegistrationClient) GetAccountDefinition() []*proto.AccountDefEntry {
 	var acctDefProps []*proto.AccountDefEntry
 
-	// target id
-	targetIDAcctDefEntry := probe.NewAccountDefEntryBuilder("targetIdentifier", "Address",
-								 "IP of the mesos master", ".*",
-								false, false).
-					Create()
+	// master ip
+	targetIDAcctDefEntry := builder.NewAccountDefEntryBuilder(string(MasterIP), string(MasterIP),	 //"MasterIP",
+		"IP of the mesos master", ".*",
+		true, false).
+		Create()
 	acctDefProps = append(acctDefProps, targetIDAcctDefEntry)
+	// master port
+	masterPortAcctDefEntry := builder.NewAccountDefEntryBuilder(string(MasterPort), string(MasterPort),	//"MasterPort",
+		"Port of the mesos master", ".*",
+		false, false).
+		Create()
+	acctDefProps = append(acctDefProps, masterPortAcctDefEntry)
 
 	// username
-	usernameAcctDefEntry := probe.NewAccountDefEntryBuilder("username", "Username",
+	usernameAcctDefEntry := builder.NewAccountDefEntryBuilder( string(Username), string(Username),		//"Username",
 									"Username of the mesos master", ".*",
 									false, false).
 					Create()
 	acctDefProps = append(acctDefProps, usernameAcctDefEntry)
 
 	// password
-	passwdAcctDefEntry := probe.NewAccountDefEntryBuilder("password", "Password",
+	passwdAcctDefEntry := builder.NewAccountDefEntryBuilder(string(Password), string(Password),		//"Password",
 								"Password of the mesos master", ".*",
 								false, true).
 					Create()
 	acctDefProps = append(acctDefProps, passwdAcctDefEntry)
 
+	// TODO: Should contain the fields required to connect to a Mesos Agent, same as the ones in the MesosTargetConf
+	if registrationClient.mesosMasterType == conf.Apache {
+		// framework id
+		frameworkIpAcctDefEntry := builder.NewAccountDefEntryBuilder(string(FrameworkIP), string(FrameworkIP), //"FrameworkIP",
+			"IP for the Framework", ".*",
+			false, false).
+			Create()
+		acctDefProps = append(acctDefProps, frameworkIpAcctDefEntry)
+
+		// framework port
+		frameworkPortAcctDefEntry := builder.NewAccountDefEntryBuilder(string(FrameworkPort), string(FrameworkPort),	//"FrameworkPort",
+			"Port for the Framework", ".*",
+			false, false).
+			Create()
+		acctDefProps = append(acctDefProps, frameworkPortAcctDefEntry)
+
+
+		// username
+		frameworkUserAcctDefEntry := builder.NewAccountDefEntryBuilder(string(FrameworkUsername), string(FrameworkUsername),	//"FrameworkUsername",
+			"Username for the framework", ".*",
+			false, false).
+			Create()
+		acctDefProps = append(acctDefProps, frameworkUserAcctDefEntry)
+
+		// password
+		frameworkPwdAcctDefEntry := builder.NewAccountDefEntryBuilder(string(FrameworkPassword), string(FrameworkPassword),	//"FrameworkPassword",
+			"Password for the framework", ".*",
+			false, true).
+			Create()
+		acctDefProps = append(acctDefProps, frameworkPwdAcctDefEntry)
+	}
+
+	// action ip
+	actionIPAcctDefEntry := builder.NewAccountDefEntryBuilder(string(ActionIP), string(ActionIP),
+		"IP of the action executor framework", ".*",
+		false, false).
+		Create()
+	acctDefProps = append(acctDefProps, actionIPAcctDefEntry)
+	// action port
+	actionPortAcctDefEntry := builder.NewAccountDefEntryBuilder(string(ActionPort), string(ActionPort),
+		"Port of the action executor framework", ".*",
+		false, false).
+		Create()
+	acctDefProps = append(acctDefProps, actionPortAcctDefEntry)
+
 	return acctDefProps
 }
+
+// TODO: change the acct def depending on the mesos or dcos target

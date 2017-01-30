@@ -17,8 +17,8 @@ import (
 	builder "github.com/turbonomic/turbo-go-sdk/pkg/builder"
 
 	conf "github.com/turbonomic/mesosturbo/pkg/conf"
-	mesoshttp "github.com/turbonomic/mesosturbo/pkg/mesoshttp"
-	"github.com/turbonomic/mesosturbo/pkg/util"
+	util "github.com/turbonomic/mesosturbo/pkg/util"
+	factory "github.com/turbonomic/mesosturbo/pkg/factory"
 )
 
 var (
@@ -28,24 +28,50 @@ var (
 // Discovery Client for the Mesos Probe
 // Implements the TurboDiscoveryClient interface
 type MesosDiscoveryClient struct {
-	lastDiscoveryTime *time.Time
-	slaveUseMap       map[string]*util.CalculatedUse
-	taskUseMap        map[string]*util.CalculatedUse
+	mesosMasterType 	 conf.MesosMasterType
 	clientConf        *conf.MesosTargetConf
+	masterRestClient	conf.MasterRestClient
+	frameworkRestClient	conf.FrameworkRestClient
+
 	targetIdentifier  string
 	username          string
 	pwd               string
+
+	builderMap 	map[*proto.EntityDTO_EntityType]EntityBuilder
+
+	lastDiscoveryTime *time.Time
+	slaveUseMap       map[string]*util.CalculatedUse
+	taskUseMap        map[string]*util.CalculatedUse
 }
 
-func NewDiscoveryClient(targetIdentifier string, confFile string) *MesosDiscoveryClient {
+func NewDiscoveryClient (mesosMasterType conf.MesosMasterType, targetIdentifier string, confFile string) probe.TurboDiscoveryClient {
+
 	// Parse conf file to create clientConf
 	clientConf, _ := conf.NewMesosTargetConf(confFile)
 	fmt.Println("[MesosDiscoveryClient] Target Conf ", clientConf)
 	// TODO: handle error
+
+	// Based on the Mesos vendor, instantiate the MesosRestClient
+	masterRestClient := factory.GetMasterRestClient(mesosMasterType, clientConf.MasterIP, clientConf.MasterPort,
+								clientConf.MasterUsername, clientConf.MasterPassword)
+
+	// Based on the Framework vendor, instantiate the Frameworks RestClient
+	// TODO:
+
 	client := &MesosDiscoveryClient{
+		mesosMasterType: mesosMasterType,
 		targetIdentifier: targetIdentifier,
 		clientConf: clientConf,
+		builderMap: make(map[*proto.EntityDTO_EntityType]EntityBuilder),
+		masterRestClient: masterRestClient,
+	}
 
+	// Login to the Mesos Master and save the login token
+	_, err := masterRestClient.Login()
+	if err != nil {
+		//TODO: throw exception to the calling layer
+		fmt.Println("[MesosDiscoveryClient] Error logging to Mesos Master at ",
+					clientConf.MasterIP, "::", clientConf.MasterPort)
 	}
 	return client
 }
@@ -53,68 +79,93 @@ func NewDiscoveryClient(targetIdentifier string, confFile string) *MesosDiscover
 // Get the Account Values to create VMTTarget in the turbo server corresponding to this client
 func (handler *MesosDiscoveryClient) GetAccountValues() *probe.TurboTarget {
 	var accountValues []*proto.AccountValue
+	clientConf := handler.clientConf
 	// Convert all parameters in clientConf to AccountValue list
-	prop := "MarathonIP"
+	prop1 := string(MasterIP)
 	accVal := &proto.AccountValue{
-		Key: &prop,
-		StringValue: &handler.clientConf.MarathonIP,
+		Key: &prop1,
+		StringValue: &clientConf.MasterIP,
 	}
 	accountValues = append(accountValues, accVal)
 
-	prop = "MarathonPort"
+	prop2 := string(MasterPort)
 	accVal = &proto.AccountValue{
-		Key: &prop,
-		StringValue: &handler.clientConf.MarathonPort,
+		Key: &prop2,
+		StringValue: &clientConf.MasterPort,
 	}
 	accountValues = append(accountValues, accVal)
 
-	prop = "MesosIP"
+	prop3 := string(Username)
 	accVal = &proto.AccountValue{
-		Key: &prop,
-		StringValue: &handler.clientConf.MesosIP,
+		Key: &prop3,
+		StringValue: &clientConf.MasterUsername,
 	}
 	accountValues = append(accountValues, accVal)
 
-	prop = "MesosPort"
+	prop4 := string(Password)
 	accVal = &proto.AccountValue{
-		Key: &prop,
-		StringValue: &handler.clientConf.MesosPort,
+		Key: &prop4,
+		StringValue: &clientConf.MasterPassword,
 	}
 	accountValues = append(accountValues, accVal)
 
-	prop = "ActionIP"
-	accVal = &proto.AccountValue{
-		Key: &prop,
-		StringValue: &handler.clientConf.ActionIP,
-	}
-	accountValues = append(accountValues, accVal)
+	if handler.mesosMasterType == conf.Apache {
+		prop5 := string(FrameworkIP)
+		accVal = &proto.AccountValue{
+			Key: &prop5,
+			StringValue: &clientConf.FrameworkIP,
+		}
+		accountValues = append(accountValues, accVal)
 
-	prop = "ActionPort"
-	accVal = &proto.AccountValue{
-		Key: &prop,
-		StringValue: &handler.clientConf.ActionPort,
-	}
-	accountValues = append(accountValues, accVal)
+		prop6 := string(FrameworkPort)
+		accVal = &proto.AccountValue{
+			Key: &prop6,
+			StringValue: &clientConf.FrameworkPort,
+		}
+		accountValues = append(accountValues, accVal)
 
-	prop = "SlavePort"
-	accVal = &proto.AccountValue{
-		Key: &prop,
-		StringValue: &handler.clientConf.SlavePort,
+		prop7 := string(FrameworkUsername)
+		accVal = &proto.AccountValue{
+			Key: &prop7,
+			StringValue: &clientConf.FrameworkUser,
+		}
+		accountValues = append(accountValues, accVal)
+
+		prop8 := string(FrameworkPassword)
+		accVal = &proto.AccountValue{
+			Key: &prop8,
+			StringValue: &clientConf.FrameworkPassword,
+		}
+		accountValues = append(accountValues, accVal)
 	}
-	accountValues = append(accountValues, accVal)
+
+	//prop9 := "ActionIP"
+	//accVal = &proto.AccountValue{
+	//	Key: &prop9,
+	//	StringValue: &clientConf.ActionIP,
+	//}
+	//accountValues = append(accountValues, accVal)
+	//
+	//prop10 := "ActionPort"
+	//accVal = &proto.AccountValue{
+	//	Key: &prop10,
+	//	StringValue: &clientConf.ActionPort,
+	//}
+	//accountValues = append(accountValues, accVal)
 
 	targetInfo := &probe.TurboTarget{
 		AccountValues: accountValues,
 	}
+	fmt.Printf("[MesosDiscoveryClient] account values %s\n",  accountValues)
 
-	targetInfo.SetUser("defaultUsername")
-	targetInfo.SetPassword("defaultPassword")
+	targetInfo.SetUser(clientConf.MasterUsername)
+	targetInfo.SetPassword(clientConf.MasterPassword)
 	return targetInfo
 }
 
 // Validate the Target
 func (handler *MesosDiscoveryClient) Validate(accountValues[] *proto.AccountValue) *proto.ValidationResponse {
-	fmt.Printf("[MesosDiscoveryClient] BEGIN Validation for MesosDiscoveryClient  %s", accountValues)
+	fmt.Printf("[MesosDiscoveryClient] BEGIN Validation for MesosDiscoveryClient  %s\n", accountValues)
 	// TODO: connect to the client and get validation response
 	validationResponse := &proto.ValidationResponse{}
 
@@ -122,19 +173,19 @@ func (handler *MesosDiscoveryClient) Validate(accountValues[] *proto.AccountValu
 	return validationResponse
 }
 
+
 // Discover the Target Topology
 func (handler *MesosDiscoveryClient) Discover(accountValues[] *proto.AccountValue) *proto.DiscoveryResponse {
-	fmt.Printf("[MesosDiscoveryClient] BEGIN Discovery for MesosDiscoveryClient %s", accountValues)
+	fmt.Printf("[MesosDiscoveryClient] BEGIN Discovery for MesosDiscoveryClient %s\n", accountValues)
 	//Discover the Mesos topology
 	glog.V(3).Infof("[MesosDiscoveryClient] Discover topology request from server.")
-	// 1. Get message ID
-	var stopCh chan struct{} = make(chan struct{})
-	defer close(stopCh)
 
+	// Get state
+	// TODO: update leader and reissue request
+	handler.masterRestClient.GetState()
+
+	fmt.Println("=====================================================================")
 	// 2. Build discoverResponse
-	// Get the discovery client for the given target identifier from the account values map
-	//handler := myProbe.GetTurboDiscoveryClient(accountValues)
-
 	mesosProbe, err := handler.NewMesosProbe()
 	if err != nil && err.Error() == "update leader" {
 		mesosProbe, err = handler.NewMesosProbe()
@@ -180,10 +231,11 @@ func (handler *MesosDiscoveryClient) Discover(accountValues[] *proto.AccountValu
 // TODO: TO REFACTOR
 func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, error) {
 	var fullUrl string
-	if handler.clientConf.MesosPort == "" {
-		fullUrl = "http://" + handler.clientConf.MesosIP + "/mesos/state"
+
+	if handler.clientConf.MasterPort == "" {
+		fullUrl = "http://" + handler.clientConf.MasterIP + "/mesos/state"
 	} else {
-		fullUrl = "http://" + handler.clientConf.MesosIP + ":" + handler.clientConf.MesosPort + "/state"
+		fullUrl = "http://" + handler.clientConf.MasterIP + ":" + handler.clientConf.MasterPort + "/state"
 	}
 	fmt.Println("[MesosDiscoveryClient] The full Url is ", fullUrl)
 
@@ -194,11 +246,11 @@ func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, er
 		return nil, err
 	}
 
-	// DCOS mode only
-	if handler.clientConf.DCOS {
-		req.Header.Add("content-type", "application/json")
-		req.Header.Add("authorization", "token="+handler.clientConf.Token)
-	}
+	//// DCOS mode only
+	//if handler.clientConf.DCOS {
+	//	req.Header.Add("content-type", "application/json")
+	//	req.Header.Add("authorization", "token="+handler.clientConf.Token)
+	//}
 
 	fmt.Println("%+v", req)
 	client := &http.Client{}
@@ -217,17 +269,17 @@ func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, er
 		return nil, errors.New("Empty response status\n")
 	}
 
-	if resp.StatusCode != 200 {
-		mesosdcosCli := &mesoshttp.MesosHTTPClient{
-			MesosMasterBase: fullUrl,
-		}
-		errormsg := mesosdcosCli.DCOSLoginRequest(handler.clientConf, handler.clientConf.Token)
-		if errormsg != nil {
-			glog.Errorf("Please check DCOS credentials and start mesosturbo again.\n")
-			return nil, errormsg
-		}
-		glog.V(3).Infof("Current token has expired, updated DCOS token.\n")
-	}
+	//if resp.StatusCode != 200 {
+	//	mesosdcosCli := &mesoshttp.MesosHTTPClient{
+	//		MesosMasterBase: fullUrl,
+	//	}
+	//	errormsg := mesosdcosCli.DCOSLoginRequest(handler.clientConf, handler.clientConf.Token)
+	//	if errormsg != nil {
+	//		glog.Errorf("Please check DCOS credentials and start mesosturbo again.\n")
+	//		return nil, errormsg
+	//	}
+	//	glog.V(3).Infof("Current token has expired, updated DCOS token.\n")
+	//}
 
 	respContent, err := handler.parseAPIStateResponse(resp)
 
@@ -236,25 +288,25 @@ func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, er
 		return nil, err
 	}
 
-	currentLeader := respContent.Leader
+	currentLeader := respContent.Leader		// "leader": "master@10.10.174.91:5050",
 	respContent.Leader = currentLeader[7 : len(currentLeader)-5]
 
-	if respContent.Leader != handler.clientConf.MesosIP {
+	if respContent.Leader != handler.clientConf.MasterIP {
 		// not good, update leader
-		handler.clientConf.MesosIP = respContent.Leader
-		glog.V(3).Infof("The mesos master IP has been updated to : %s \n", handler.clientConf.MesosIP)
+		handler.clientConf.MasterIP = respContent.Leader
+		glog.V(3).Infof("The mesos master IP has been updated to : %s \n", handler.clientConf.MasterIP)
 		return nil, fmt.Errorf("update leader")
 	}
 
 	if respContent.SlaveIdIpMap == nil {
-		respContent.SlaveIdIpMap = make(map[string]string)
+		respContent.SlaveIdIpMap = make(map[string]string)	// TODO: doesn't look like the Slaves data from the response is saved here
 	}
 
-	// UPDATE RESOURCE UNITS AFTER HTTP REQUEST
+	// UPDATE RESOURCE UNITS AFTER HTTP REQUEST for each slave
 	for idx := range respContent.Slaves {
 		glog.V(3).Infof("Number of slaves %d \n", len(respContent.Slaves))
 		s := &respContent.Slaves[idx]
-		s.Resources.Mem = s.Resources.Mem * float64(1024)
+		s.Resources.Mem = s.Resources.Mem * float64(1024)		// TODO: convert units for mem only?
 		s.UsedResources.Mem = s.UsedResources.Mem * float64(1024)
 		s.OfferedResources.Mem = s.OfferedResources.Mem * float64(1024)
 		glog.V(3).Infof("=======> SLAVE idk: %d name: %s, mem: %.2f, cpu: %.2f, disk: %.2f \n", idx, s.Name, s.Resources.Mem, s.Resources.CPUs, s.Resources.Disk)
@@ -293,6 +345,7 @@ func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, er
 	}
 	glog.V(3).Infof("Number of tasks \n", len(taskContent.Tasks))
 
+	// For each task, convert Mem units
 	for j := range taskContent.Tasks {
 		t := taskContent.Tasks[j]
 		// MEM UNITS KB
@@ -304,7 +357,7 @@ func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, er
 	respContent.TaskMasterAPI = *taskContent
 
 	//Marathon
-	fullUrlM := "http://" + handler.clientConf.MarathonIP + ":" + handler.clientConf.MarathonPort + "/v2/apps"
+	fullUrlM := "http://" + handler.clientConf.FrameworkIP + ":" + handler.clientConf.FrameworkPort + "/v2/apps"
 	glog.V(4).Infof("The full Url is ", fullUrlM)
 
 	reqM, err := http.NewRequest("GET", fullUrlM, nil)
@@ -314,10 +367,10 @@ func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, er
 		return nil, err
 	}
 
-	if handler.clientConf.DCOS {
-		reqM.Header.Add("content-type", "application/json")
-		reqM.Header.Add("authorization", "token="+handler.clientConf.Token)
-	}
+	//if handler.clientConf.DCOS {
+	//	reqM.Header.Add("content-type", "application/json")
+	//	reqM.Header.Add("authorization", "token="+handler.clientConf.Token)
+	//}
 
 	glog.V(4).Infof("%+v", reqM)
 	clientM := &http.Client{}
@@ -350,6 +403,7 @@ func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, er
 	var allports []string
 	allports = make([]string, 1)
 
+	// Get Metrics for each slave or agent
 	for i := range respContent.Slaves {
 		s := respContent.Slaves[i]
 		someports, err := handler.monitorSlaveStatistics(s, handler.taskUseMap, mapTaskRes, mapSlaveUse, mapTaskUse, ports_slaves)
@@ -369,7 +423,7 @@ func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, er
 	handler.slaveUseMap = mapSlaveUse
 	respContent.MapTaskStatistics = mapTaskRes
 	respContent.SlaveUseMap = mapSlaveUse
-	respContent.Cluster.MasterIP = handler.clientConf.MesosIP
+	respContent.Cluster.MasterIP = handler.clientConf.MasterIP
 	respContent.Cluster.ClusterName = respContent.ClusterName
 
 	return respContent, nil
@@ -384,10 +438,10 @@ func (handler *MesosDiscoveryClient) monitorSlaveStatistics(s util.Slave, previo
 		return nil, err
 	}
 
-	if handler.clientConf.DCOS {
-		req.Header.Add("content-type", "application/json")
-		req.Header.Add("authorization", "token="+handler.clientConf.Token)
-	}
+	//if handler.clientConf.DCOS { // for DCOS slave, send the session token
+	//	req.Header.Add("content-type", "application/json")
+	//	req.Header.Add("authorization", "token="+handler.clientConf.Token)
+	//}
 
 	req.Close = true
 	client := &http.Client{}
@@ -531,7 +585,7 @@ func (handler *MesosDiscoveryClient) monitorSlaveStatistics(s util.Slave, previo
 }
 
 func (handler *MesosDiscoveryClient) parseAPITasksResponse(resp *util.MesosAPIResponse) (*util.MasterTasks, error) {
-	glog.V(4).Infof("----> in parseAPICallResponse")
+	glog.V(4).Infof("----> in parseAPITasksResponse")
 	if resp == nil {
 		return nil, errors.New("Task information response received is nil")
 	}
@@ -554,7 +608,7 @@ func (handler *MesosDiscoveryClient) parseAPITasksResponse(resp *util.MesosAPIRe
 }
 
 func (handler *MesosDiscoveryClient) parseAPIStateResponse(resp *http.Response) (*util.MesosAPIResponse, error) {
-	glog.V(4).Infof("----> in parseAPICallResponse")
+	glog.V(4).Infof("----> in parseAPIStateResponse")
 	if resp == nil {
 		return nil, errors.New("Response sent from mesos/DCOS master is nil")
 	}
