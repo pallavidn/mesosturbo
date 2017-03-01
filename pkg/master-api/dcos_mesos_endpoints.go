@@ -1,28 +1,42 @@
 package master
 
-
+// Endpoint paths for Apache Mesos Master
 type DCOSEndpointPath string
+
 const (
-	DCOS_StatePath DCOSEndpointPath = "/mesos" +  "/state"	//string(Apache_StatePath)
-	DCOS_FrameworksPath DCOSEndpointPath = "/mesos"+ "/frameworks" // Apache_FrameworksPath
-	DCOS_TasksPath DCOSEndpointPath = "/mesos" + "/tasks"	//Apache_TasksPath
+	DCOS_StatePath      DCOSEndpointPath = "/mesos" + "/state"
+	DCOS_FrameworksPath DCOSEndpointPath = "/mesos" + "/frameworks"
+	DCOS_TasksPath      DCOSEndpointPath = "/mesos" + "/tasks"
+	DCOS_LoginPath      DCOSEndpointPath = "/acs/api/v1/auth/login"
 )
 
-
-type DCOSMesosEndpointStore struct {
-	EndpointMap map[MesosEndpointName]DCOSEndpointPath
-}
-
-func NewDCOSMesosEndpointStore() *DCOSMesosEndpointStore {
-	store := &DCOSMesosEndpointStore{
-		EndpointMap: make(map[MesosEndpointName]DCOSEndpointPath),
+// Endpoint store containing endpoint and parsers for DCOS Mesos Master
+func NewDCOSMesosEndpointStore() *MasterEndpointStore {
+	store := &MasterEndpointStore{
+		EndpointMap: make(map[MasterEndpointName]*MasterEndpoint),
 	}
 
 	epMap := store.EndpointMap
 
-	epMap[State] = DCOS_StatePath
-	epMap[Frameworks] = DCOS_FrameworksPath
-	epMap[Tasks] = DCOS_TasksPath
+	epMap[Login] = &MasterEndpoint{
+		EndpointName: string(Login),
+		EndpointPath: string(DCOS_LoginPath),
+		Parser:       &DCOSLoginParser{},
+	}
+
+	epMap[State] = &MasterEndpoint{
+		EndpointName: string(State),
+		EndpointPath: string(DCOS_StatePath),
+		Parser:       &GenericMasterStateParser{},
+	}
+	epMap[Frameworks] = &MasterEndpoint{
+		EndpointName: string(Frameworks),
+		EndpointPath: string(DCOS_FrameworksPath),
+	}
+	epMap[Tasks] = &MasterEndpoint{
+		EndpointName: string(Tasks),
+		EndpointPath: string(DCOS_TasksPath),
+	}
+
 	return store
 }
-

@@ -3,5 +3,7 @@
     "master-ip": "dcosentpr-elasticl-1y19vdkfxkx0s-1027774118.us-west-1.elb.amazonaws.com",
     "master-port": "",
     "master-user": "enlin.xu",
-    "master-pwd": "sysdreamworks"
+    "master-pwd": "sysdreamworks",
+
+    "framework": "DCOS Marathon"
 }

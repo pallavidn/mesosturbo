@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"github.com/golang/glog"
 
-	proto "github.com/turbonomic/turbo-go-sdk/pkg/proto"
-	builder "github.com/turbonomic/turbo-go-sdk/pkg/builder"
+	"github.com/turbonomic/turbo-go-sdk/pkg/proto"
+	"github.com/turbonomic/turbo-go-sdk/pkg/builder"
 
 	"github.com/turbonomic/mesosturbo/pkg/util"
 )
@@ -32,7 +32,8 @@ type NodeProbe struct {
 }
 
 // Get current stat of node resources, such as capacity and used values.
-func (nodeProbe *NodeProbe) getNodeResourceStat(slaveInfo *util.Slave, useMap map[string]*util.CalculatedUse) (*NodeResourceStat, error) {
+func (nodeProbe *NodeProbe) getNodeResourceStat(slaveInfo *util.Slave,
+						useMap map[string]*util.CalculatedUse) (*NodeResourceStat, error) {
 	// The return cpu frequency is in KHz, we need MHz
 	// TODO pam , how to get slave frequency?
 	//	cpuFrequency := 400 // machineInfo.CpuFrequency / 1000

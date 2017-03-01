@@ -2,6 +2,110 @@ package util
 
 import "time"
 
+type MesosAPIResponse struct {
+	Leader      string `json:"leader"`
+	Version     string `json:"version"`
+	Id          string `json:"id"`
+	ClusterName string `json:"cluster"`
+
+	ActivatedSlaves   float64     `json:"activated_slaves"`
+	DeActivatedSlaves float64     `json:"deactivated_slaves"`
+	Slaves            []Slave     `json:"slaves"`
+	Frameworks        []Framework `json:"frameworks"`
+	TaskMasterAPI     MasterTasks
+	SlaveIdIpMap      map[string]string
+	MapTaskStatistics map[string]Statistics
+	//Monitor
+	TimeSinceLastDisc *time.Time
+	SlaveUseMap       map[string]*CalculatedUse
+	// TODO use this?
+	//MapSlaveToTasks map[string][]Task
+	//cluster
+	Cluster ClusterInfo
+
+	AllPorts []string
+	MApps    *MarathonApps
+}
+type Slave struct {
+	Id               string    `json:"id"`
+	Pid              string    `json:"pid"`
+	Resources        Resources `json:"resources"`
+	UsedResources    Resources `json:"used_resources"`
+	OfferedResources Resources `json:"offered_resources"`
+	Name             string    `json:"hostname"`
+	Calculated       CalculatedUse
+	Attributes       Attributes `json:"attributes"`
+}
+
+// assumed to be framework from slave , not from master state
+type Framework struct {
+	Id        string    `json:"id"`
+	Name      string    `json:"name"`
+	Pid       string    `json:"pid"`
+	Hostname  string    `json:"hostname"`
+	Active    bool      `json:"active"`
+	Role      string    `json:"role"`
+	Resources Resources `json:"resources"`
+	Tasks     []Task    `json:"tasks"`
+}
+
+type Task struct {
+	FrameworkId string    `json:"framework_id"`
+	SlaveId     string    `json:"slave_id"`
+	Container   Container `json:"container"`
+	Discovery   Discovery `json:"discovery"`
+	ExecutorId  string    `json:"executor_id"`
+	Id          string    `json:"id"`
+	Labels      []Label   `json:"labels"`
+	Name        string    `json:"name"`
+	Resources   Resources `json:"resources"`
+	State       string    `json:"state"`
+	Statuses    []Status  `json:"statuses"`
+}
+
+type MasterTasks struct {
+	Tasks []Task `json:"tasks"`
+}
+
+type ClusterInfo struct {
+	ClusterName string
+	MasterIP    string
+	MasterId    string
+}
+
+type Discovery struct {
+	Name       string    `json:"name"`
+	Ports      DiscPorts `json:"ports"`
+	Visibility string    `json:"visibility"`
+}
+type DiscPorts struct {
+	Ports []PortInfo `json:"ports"`
+}
+type PortInfo struct {
+	Number   int64  `json:"number"`
+	Protocol string `json:"protocol"`
+}
+
+type NetworkInfos struct {
+	Infos []NetworkInfo `json:"network_infos"`
+}
+
+type NetworkInfo struct {
+	IPaddress string `json:"ip_address"`
+}
+
+type Status struct {
+	Container_Status NetworkInfos `json:"container_status"`
+	State            string       `json:"state"`
+	//	Timestamp `json:"timestamp"`
+}
+
+type Label struct {
+	//	Key   string `json:"key"`
+	//	Value string `json:"value"`
+	State string `json:"key"`
+}
+
 type Attributes struct {
 	Rack string `json:"rack"`
 }
@@ -43,50 +147,23 @@ type Executor struct {
 	Statistics Statistics `json:"statistics"`
 }
 
-type Slave struct {
-	Id               string    `json:"id"`
-	Pid              string    `json:"pid"`
-	Resources        Resources `json:"resources"`
-	UsedResources    Resources `json:"used_resources"`
-	OfferedResources Resources `json:"offered_resources"`
-	Name             string    `json:"hostname"`
-	Calculated       CalculatedUse
-	Attributes       Attributes `json:"attributes"`
+//
+//// ================= Frameworks Apps ====================
+type MarathonApps struct {
+	Apps []App `json:"apps"`
 }
 
-type MesosAPIResponse struct {
-	AllPorts          []string
-	MApps             *MarathonApps
-	Version           string      `json:"version"`
-	Id                string      `json:"id"`
-	ActivatedSlaves   float64     `json:"activated_slaves"`
-	DeActivatedSlaves float64     `json:"deactivated_slaves"`
-	Slaves            []Slave     `json:"slaves"`
-	Frameworks        []Framework `json:"frameworks"`
-	TaskMasterAPI     MasterTasks
-	SlaveIdIpMap      map[string]string
-	MapTaskStatistics map[string]Statistics
-	Leader            string `json:"leader"`
-	//Monitor
-	TimeSinceLastDisc *time.Time
-	SlaveUseMap       map[string]*CalculatedUse
-	// TODO use this?
-	MapSlaveToTasks map[string][]Task
-	//cluster
-	Cluster     ClusterInfo
-	ClusterName string `json:"cluster"`
+type App struct {
+	Name         string     `json:"id"`
+	Constraints  [][]string `json:"constraints"`
+	RequirePorts bool       `json:"requirePorts"`
+	Container    Container  `json:"container"`
 }
 
-type ClusterInfo struct {
-	ClusterName string
-	MasterIP    string
-	MasterId    string
-}
-
-type PortMapping struct {
-	ContainerPort int `json:"containerPort"`
-	HostPort      int `json:"hostPort"`
-	ServicePort   int `json:"servicePort"`
+//// ==================== Container =================
+type Container struct {
+	Docker ContDocker `json:"docker"`
+	Type   string     `json"type"`
 }
 
 type ContDocker struct {
@@ -97,86 +174,13 @@ type ContDocker struct {
 	PortMappings   []PortMapping `json:"portMappings"`
 }
 
-type Container struct {
-	Docker ContDocker `json:"docker"`
-	Type   string     `json"type"`
+type PortMapping struct {
+	ContainerPort int `json:"containerPort"`
+	HostPort      int `json:"hostPort"`
+	ServicePort   int `json:"servicePort"`
 }
 
-type PortInfo struct {
-	Number   int64  `json:"number"`
-	Protocol string `json:"protocol"`
-}
-
-type DiscPorts struct {
-	Ports []PortInfo `json:"ports"`
-}
-
-type Discovery struct {
-	Name       string    `json:"name"`
-	Ports      DiscPorts `json:"ports"`
-	Visibility string    `json:"visibility"`
-}
-
-type NetworkInfo struct {
-	IPaddress string `json:"ip_address"`
-}
-
-type NetworkInfos struct {
-	Infos []NetworkInfo `json:"network_infos"`
-}
-
-type Status struct {
-	Container_Status NetworkInfos `json:"container_status"`
-	State            string       `json:"state"`
-	//	Timestamp `json:"timestamp"`
-}
-
-type Label struct {
-	//	Key   string `json:"key"`
-	//	Value string `json:"value"`
-	State string `json:"key"`
-}
-
-type Task struct {
-	Container   Container `json:"container"`
-	Discovery   Discovery `json:"discovery"`
-	ExecutorId  string    `json:"executor_id"`
-	FrameworkId string    `json:"framework_id"`
-	Id          string    `json:"id"`
-	Labels      []Label   `json:"labels"`
-	Name        string    `json:"name"`
-	Resources   Resources `json:"resources"`
-	SlaveId     string    `json:"slave_id"`
-	State       string    `json:"state"`
-	Statuses    []Status  `json:"statuses"`
-}
-
-// assumed to be framework from slave , not from master state
-type Framework struct {
-	Id        string    `json:"id"`
-	Name      string    `json:"name"`
-	Pid       string    `json:"pid"`
-	Hostname  string    `json:"hostname"`
-	Active    bool      `json:"active"`
-	Role      string    `json:"role"`
-	Resources Resources `json:"resources"`
-	Tasks     []Task    `json:"tasks"`
-}
-
-type MasterTasks struct {
-	Tasks []Task `json:"tasks"`
-}
-
-type App struct {
-	Name         string     `json:"id"`
-	Constraints  [][]string `json:"constraints"`
-	RequirePorts bool       `json:"requirePorts"`
-	Container    Container  `json:"container"`
-}
-
-type MarathonApps struct {
-	Apps []App `json:"apps"`
-}
+// ==============================================
 
 type TokenResponse struct {
 	Token string `json:"token"`

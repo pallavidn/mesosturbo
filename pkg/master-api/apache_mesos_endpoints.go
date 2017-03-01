@@ -1,38 +1,37 @@
 package master
 
-
+// Endpoint paths for Apache Mesos Master
 type ApacheMesosEndpointPath string
+
 const (
-	Apache_StatePath ApacheMesosEndpointPath = "/state"
+	Apache_StatePath      ApacheMesosEndpointPath = "/state"
 	Apache_FrameworksPath ApacheMesosEndpointPath = "/frameworks"
-	Apache_TasksPath ApacheMesosEndpointPath = "/tasks"
+	Apache_TasksPath      ApacheMesosEndpointPath = "/tasks"
 )
 
-type ApacheMesosEndpointStore struct {
-	EndpointMap map[MesosEndpointName]ApacheMesosEndpointPath
-}
-
-func NewApacheMesosEndpointStore() *ApacheMesosEndpointStore {
-	store := &ApacheMesosEndpointStore{
-			EndpointMap: make(map[MesosEndpointName]ApacheMesosEndpointPath),
-		}
+// Endpoint store containing endpoint and parsers for Apache Mesos Master
+func NewApacheMesosEndpointStore() *MasterEndpointStore {
+	store := &MasterEndpointStore{
+		EndpointMap: make(map[MasterEndpointName]*MasterEndpoint),
+	}
 
 	epMap := store.EndpointMap
 
-	epMap[State] = Apache_StatePath
-	epMap[Frameworks] = Apache_FrameworksPath
-	epMap[Tasks] = Apache_TasksPath
+	epMap[State] = &MasterEndpoint{
+		EndpointName: string(State),
+		EndpointPath: string(Apache_StatePath),
+		Parser:       &GenericMasterStateParser{},
+	}
+	epMap[Frameworks] = &MasterEndpoint{
+		EndpointName: string(Frameworks),
+		EndpointPath: string(Apache_FrameworksPath),
+		Parser:       &GenericMasterStateParser{},
+	}
+	epMap[Tasks] = &MasterEndpoint{
+		EndpointName: string(Tasks),
+		EndpointPath: string(Apache_TasksPath),
+		Parser:       &GenericMasterStateParser{},
+	}
+
 	return store
 }
-
-
-
-type MesosEndpoint struct {
-	Path string
-	Parser EndpointParser
-}
-//
-//type EndpointRequest interface {
-//	GetRequest() *http.Request
-//}
-

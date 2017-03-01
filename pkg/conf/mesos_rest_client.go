@@ -1,30 +1,18 @@
 package conf
 
+import "github.com/turbonomic/mesosturbo/pkg/util"
 
+// Interface for the client to handle Rest API communication with the Mesos Master
 type MasterRestClient interface {
 	Login() (string, error)
-	GetState()	(*MesosState, error)
+	GetState() (*util.MesosAPIResponse, error)	//(*MesosState, error)
 	GetNodes()
 	GetFrameworks()
 }
 
 
+// Interface for the client to handle Rest API communication with the Mesos Framework
 type FrameworkRestClient interface {
-	getFrameworkApps()
+	GetFrameworkApps() (*util.FrameworkApps, error)
 }
-
-type MesosMasterType string
-type MesosFrameworkType string
-
-const (
-	Apache MesosMasterType = "Apache Mesos"
-	DCOS MesosMasterType = "Mesosphere DCOS"
-)
-
-const (
-	Marathon MesosFrameworkType = "Marathon"
-	Chronos MesosFrameworkType = "Chronos"
-	Hadoop MesosFrameworkType = "Hadoop"
-)
-
 

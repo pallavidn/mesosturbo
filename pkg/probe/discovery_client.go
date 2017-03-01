@@ -4,7 +4,6 @@ import (
 	"time"
 	"net/http"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"encoding/json"
 	"strings"
@@ -12,13 +11,12 @@ import (
 
 	"github.com/golang/glog"
 
-	proto "github.com/turbonomic/turbo-go-sdk/pkg/proto"
-	probe "github.com/turbonomic/turbo-go-sdk/pkg/probe"
-	builder "github.com/turbonomic/turbo-go-sdk/pkg/builder"
+	"github.com/turbonomic/turbo-go-sdk/pkg/proto"
+	"github.com/turbonomic/turbo-go-sdk/pkg/probe"
 
-	conf "github.com/turbonomic/mesosturbo/pkg/conf"
-	util "github.com/turbonomic/mesosturbo/pkg/util"
-	factory "github.com/turbonomic/mesosturbo/pkg/factory"
+	"github.com/turbonomic/mesosturbo/pkg/conf"
+	"github.com/turbonomic/mesosturbo/pkg/util"
+	"github.com/turbonomic/mesosturbo/pkg/factory"
 )
 
 var (
@@ -44,65 +42,83 @@ type MesosDiscoveryClient struct {
 	taskUseMap        map[string]*util.CalculatedUse
 }
 
-func NewDiscoveryClient (mesosMasterType conf.MesosMasterType, targetIdentifier string, confFile string) probe.TurboDiscoveryClient {
+func NewDiscoveryClient(mesosMasterType conf.MesosMasterType, clientConf *conf.MesosTargetConf) (probe.TurboDiscoveryClient, error) {
+	if clientConf == nil {
+		return nil, errors.New("[MesosDiscoveryClient] Null config")
+	}
 
-	// Parse conf file to create clientConf
-	clientConf, _ := conf.NewMesosTargetConf(confFile)
-	fmt.Println("[MesosDiscoveryClient] Target Conf ", clientConf)
-	// TODO: handle error
-
-	// Based on the Mesos vendor, instantiate the MesosRestClient
-	masterRestClient := factory.GetMasterRestClient(mesosMasterType, clientConf.MasterIP, clientConf.MasterPort,
-								clientConf.MasterUsername, clientConf.MasterPassword)
-
-	// Based on the Framework vendor, instantiate the Frameworks RestClient
-	// TODO:
+	glog.V(2).Infof("[MesosDiscoveryClient] Target Conf ", clientConf)
 
 	client := &MesosDiscoveryClient{
 		mesosMasterType: mesosMasterType,
-		targetIdentifier: targetIdentifier,
+		targetIdentifier: clientConf.MasterIP,
 		clientConf: clientConf,
 		builderMap: make(map[*proto.EntityDTO_EntityType]EntityBuilder),
-		masterRestClient: masterRestClient,
+	}
+	err := client.initDiscoveryClient()
+	if err != nil {
+		return nil, errors.New("MesosDiscoveryClient] " + err.Error())
+	}
+
+	return client, nil
+}
+
+func (discoveryClient *MesosDiscoveryClient) initDiscoveryClient() error {
+	clientConf := discoveryClient.clientConf
+	// Based on the Mesos vendor, instantiate the MesosRestClient
+	masterRestClient := factory.GetMasterRestClient(clientConf.Master, clientConf)
+	if masterRestClient == nil {
+		return errors.New("Cannot find RestClient for Mesos : " + string(clientConf.Master))
 	}
 
 	// Login to the Mesos Master and save the login token
-	_, err := masterRestClient.Login()
+	token, err := masterRestClient.Login()
 	if err != nil {
-		//TODO: throw exception to the calling layer
-		fmt.Println("[MesosDiscoveryClient] Error logging to Mesos Master at ",
-					clientConf.MasterIP, "::", clientConf.MasterPort)
+		return errors.New("Error logging to Mesos Master at " +
+					clientConf.MasterIP + "::" + clientConf.MasterPort + " : " + err.Error())
 	}
-	return client
+
+	clientConf.Token = token
+	// Based on the Framework vendor, instantiate the Frameworks RestClient
+	frameworkClient := factory.GetFrameworkRestClient(clientConf.Framework, clientConf)
+	if frameworkClient == nil {
+		glog.Errorf("[MesosDiscoveryClient] Cannot find framework Client for Mesos : ", clientConf.Framework)
+	}
+
+	discoveryClient.masterRestClient = masterRestClient
+	discoveryClient.frameworkRestClient  = frameworkClient
+
+	return nil
 }
 
+
 // Get the Account Values to create VMTTarget in the turbo server corresponding to this client
-func (handler *MesosDiscoveryClient) GetAccountValues() *probe.TurboTarget {
+func (handler *MesosDiscoveryClient) GetAccountValues() *probe.TurboTargetInfo { //[]*proto.AccountValue {		//*probe.TurboTargetInfo {
 	var accountValues []*proto.AccountValue
 	clientConf := handler.clientConf
 	// Convert all parameters in clientConf to AccountValue list
-	prop1 := string(MasterIP)
+	prop1 := string(conf.MasterIP)
 	accVal := &proto.AccountValue{
 		Key: &prop1,
 		StringValue: &clientConf.MasterIP,
 	}
 	accountValues = append(accountValues, accVal)
 
-	prop2 := string(MasterPort)
+	prop2 := string(conf.MasterPort)
 	accVal = &proto.AccountValue{
 		Key: &prop2,
 		StringValue: &clientConf.MasterPort,
 	}
 	accountValues = append(accountValues, accVal)
 
-	prop3 := string(Username)
+	prop3 := string(conf.MasterUsername)
 	accVal = &proto.AccountValue{
 		Key: &prop3,
 		StringValue: &clientConf.MasterUsername,
 	}
 	accountValues = append(accountValues, accVal)
 
-	prop4 := string(Password)
+	prop4 := string(conf.MasterPassword)
 	accVal = &proto.AccountValue{
 		Key: &prop4,
 		StringValue: &clientConf.MasterPassword,
@@ -110,28 +126,28 @@ func (handler *MesosDiscoveryClient) GetAccountValues() *probe.TurboTarget {
 	accountValues = append(accountValues, accVal)
 
 	if handler.mesosMasterType == conf.Apache {
-		prop5 := string(FrameworkIP)
+		prop5 := string(conf.FrameworkIP)
 		accVal = &proto.AccountValue{
 			Key: &prop5,
 			StringValue: &clientConf.FrameworkIP,
 		}
 		accountValues = append(accountValues, accVal)
 
-		prop6 := string(FrameworkPort)
+		prop6 := string(conf.FrameworkPort)
 		accVal = &proto.AccountValue{
 			Key: &prop6,
 			StringValue: &clientConf.FrameworkPort,
 		}
 		accountValues = append(accountValues, accVal)
 
-		prop7 := string(FrameworkUsername)
+		prop7 := string(conf.FrameworkUsername)
 		accVal = &proto.AccountValue{
 			Key: &prop7,
 			StringValue: &clientConf.FrameworkUser,
 		}
 		accountValues = append(accountValues, accVal)
 
-		prop8 := string(FrameworkPassword)
+		prop8 := string(conf.FrameworkPassword)
 		accVal = &proto.AccountValue{
 			Key: &prop8,
 			StringValue: &clientConf.FrameworkPassword,
@@ -153,283 +169,204 @@ func (handler *MesosDiscoveryClient) GetAccountValues() *probe.TurboTarget {
 	//}
 	//accountValues = append(accountValues, accVal)
 
-	targetInfo := &probe.TurboTarget{
-		AccountValues: accountValues,
-	}
-	fmt.Printf("[MesosDiscoveryClient] account values %s\n",  accountValues)
+	glog.Infof("[MesosDiscoveryClient] account values %s\n",  accountValues)
+	targetInfo := probe.NewTurboTargetInfoBuilder("CloudNative", "MesosProbe", string(conf.MasterIP), accountValues).Create()
 
-	targetInfo.SetUser(clientConf.MasterUsername)
-	targetInfo.SetPassword(clientConf.MasterPassword)
-	return targetInfo
+	return targetInfo //accountValues
 }
 
 // Validate the Target
 func (handler *MesosDiscoveryClient) Validate(accountValues[] *proto.AccountValue) *proto.ValidationResponse {
-	fmt.Printf("[MesosDiscoveryClient] BEGIN Validation for MesosDiscoveryClient  %s\n", accountValues)
-	// TODO: connect to the client and get validation response
+	glog.Infof("BEGIN Validation for MesosDiscoveryClient  %s\n", accountValues)
+	// Login to the Mesos Master and save the login token
+	token, err := handler.masterRestClient.Login()
+	if err != nil {
+		//TODO: throw exception to the calling layer
+		glog.Errorf("[MesosDiscoveryClient] Error logging to Mesos Master at ",
+					accountValues)
+	}
+	handler.clientConf.Token = token
+	// TODO: login here and save the login token
 	validationResponse := &proto.ValidationResponse{}
 
-	fmt.Printf("[MesosDiscoveryClient] validation response %s\n", validationResponse)
+	glog.Infof("validation response %s\n", validationResponse)
 	return validationResponse
 }
 
 
 // Discover the Target Topology
-func (handler *MesosDiscoveryClient) Discover(accountValues[] *proto.AccountValue) *proto.DiscoveryResponse {
-	fmt.Printf("[MesosDiscoveryClient] BEGIN Discovery for MesosDiscoveryClient %s\n", accountValues)
+func (handler *MesosDiscoveryClient) Discover(accountValues[] *proto.AccountValue) (*proto.DiscoveryResponse) {
+	glog.Infof("BEGIN Discovery for MesosDiscoveryClient %s\n", accountValues)
 	//Discover the Mesos topology
-	glog.V(3).Infof("[MesosDiscoveryClient] Discover topology request from server.")
-
-	// Get state
+	// Mesos Master state
 	// TODO: update leader and reissue request
-	handler.masterRestClient.GetState()
-
-	fmt.Println("=====================================================================")
-	// 2. Build discoverResponse
-	mesosProbe, err := handler.NewMesosProbe()
-	if err != nil && err.Error() == "update leader" {
-		mesosProbe, err = handler.NewMesosProbe()
-		if err != nil {
-			glog.Errorf("Error, need to update leader")
-			return nil
-		}
+	mesosState, err := handler.masterRestClient.GetState()
+	if err != nil {
+		glog.Errorf("Error getting state from master : %s \n", err)
+		return nil
 	}
+	glog.V(3).Infof("Mesos Get Succeeded: %v\n", mesosState)
+
+	// Handler updated leader
+	//if err != nil && err.Error() == "update leader" {
+	//	mesosState, err = handler.masterRestClient.GetState()
+	//	if err != nil {
+	//		glog.Errorf("Error, need to update leader")
+	//		return nil
+	//	}
+	//}
+
+	// Framework response
+	frameworkResp, err := handler.frameworkRestClient.GetFrameworkApps()
 
 	if err != nil {
-		glog.Errorf("Error getting state from master : %s", err)
+		glog.Errorf("Error parsing response from the Framework: %s \n", err)
 		return nil
 	}
 
-	nodeEntityDtos, err := handler.ParseNode(mesosProbe, handler.slaveUseMap)
+	glog.V(3).Infof("Marathon Get Succeeded: %v\n", frameworkResp)
+	handler.parseMesosState(mesosState, frameworkResp)	// to create convenience maps for slaves, tasks, convert units
+
+	// 2. Build Entities
+	nodeBuilder := &VMEntityBuilder{
+		MasterState:mesosState,
+	}
+	nodeEntityDtos, err := nodeBuilder.BuildEntities()
 	if err != nil {
 		glog.Errorf("Error parsing nodes: %s. Will return.", err)
-		fmt.Println("[MesosDiscoveryClient] Error parsing nodes: %s. Will return.", err)
 		return nil
 	}
-	containerEntityDtos, err := handler.ParseTask(mesosProbe, handler.taskUseMap)
+
+	containerBuilder := &ContainerEntityBuilder{
+		MasterState:mesosState,
+	}
+	containerEntityDtos, err := containerBuilder.BuildEntities()	//handler.ParseTask(mesosState, handler.taskUseMap)
 	if err != nil {
 		// TODO, should here still send out msg to server? Or set errorDTO?
 		glog.Errorf("Error parsing pods: %s. Will return.", err)
-		fmt.Println("[MesosDiscoveryClient] Error parsing pods: %s. Will return.", err)
+		return nil
+	}
+
+	appBuilder := &AppEntityBuilder{
+		MasterState:mesosState,
+	}
+	appEntityDtos, err := appBuilder.BuildEntities()	//handler.ParseTask(mesosState, handler.taskUseMap)
+	if err != nil {
+		// TODO, should here still send out msg to server? Or set errorDTO?
+		glog.Errorf("Error parsing pods: %s. Will return.", err)
 		return nil
 	}
 
 	entityDtos := nodeEntityDtos
 	entityDtos = append(entityDtos, containerEntityDtos...)
-	//	entityDtos = append(entityDtos, serviceEntityDtos...)
+	entityDtos = append(entityDtos, appEntityDtos...)
+
+	// 3. Discovery Response
 	discoveryResponse := &proto.DiscoveryResponse{
 		EntityDTO: entityDtos,
 	}
 
 	currtime := time.Now()
 	handler.lastDiscoveryTime = &currtime
-	fmt.Printf("[MesosDiscoveryClient] END Discovery for MesosDiscoveryClient %s", accountValues)
+	glog.Infof("END Discovery for MesosDiscoveryClient %s", accountValues)
 	return discoveryResponse
 }
 
 // ===================== Detailed Discovery ===========================================
-// TODO: TO REFACTOR
-func (handler *MesosDiscoveryClient) NewMesosProbe() (*util.MesosAPIResponse, error) {
-	var fullUrl string
-
-	if handler.clientConf.MasterPort == "" {
-		fullUrl = "http://" + handler.clientConf.MasterIP + "/mesos/state"
-	} else {
-		fullUrl = "http://" + handler.clientConf.MasterIP + ":" + handler.clientConf.MasterPort + "/state"
-	}
-	fmt.Println("[MesosDiscoveryClient] The full Url is ", fullUrl)
-
-	req, err := http.NewRequest("GET", fullUrl, nil)
-
-	if err != nil {
-		glog.Errorf("Error in GET request: %s\n", err)
-		return nil, err
-	}
-
-	//// DCOS mode only
-	//if handler.clientConf.DCOS {
-	//	req.Header.Add("content-type", "application/json")
-	//	req.Header.Add("authorization", "token="+handler.clientConf.Token)
-	//}
-
-	fmt.Println("%+v", req)
-	client := &http.Client{}
-	resp, err := client.Do(req)
-
-	if err != nil {
-		glog.Errorf("Error in GET request to mesos master: %s\n", err)
-		return nil, err
-	}
-
-	defer resp.Body.Close()
-
-	// Get token if response if OK
-	if resp.Status == "" {
-		glog.Errorf("Empty response status\n")
-		return nil, errors.New("Empty response status\n")
-	}
-
-	//if resp.StatusCode != 200 {
-	//	mesosdcosCli := &mesoshttp.MesosHTTPClient{
-	//		MesosMasterBase: fullUrl,
-	//	}
-	//	errormsg := mesosdcosCli.DCOSLoginRequest(handler.clientConf, handler.clientConf.Token)
-	//	if errormsg != nil {
-	//		glog.Errorf("Please check DCOS credentials and start mesosturbo again.\n")
-	//		return nil, errormsg
-	//	}
-	//	glog.V(3).Infof("Current token has expired, updated DCOS token.\n")
-	//}
-
-	respContent, err := handler.parseAPIStateResponse(resp)
-
-	if err != nil {
-		glog.Errorf("Error parsing Mesos master state response")
-		return nil, err
-	}
-
-	currentLeader := respContent.Leader		// "leader": "master@10.10.174.91:5050",
-	respContent.Leader = currentLeader[7 : len(currentLeader)-5]
-
-	if respContent.Leader != handler.clientConf.MasterIP {
-		// not good, update leader
-		handler.clientConf.MasterIP = respContent.Leader
-		glog.V(3).Infof("The mesos master IP has been updated to : %s \n", handler.clientConf.MasterIP)
-		return nil, fmt.Errorf("update leader")
-	}
-
-	if respContent.SlaveIdIpMap == nil {
-		respContent.SlaveIdIpMap = make(map[string]string)	// TODO: doesn't look like the Slaves data from the response is saved here
-	}
-
+func (handler *MesosDiscoveryClient) parseMesosState (stateResp *util.MesosAPIResponse, frameworkResp *util.FrameworkApps) (*util.MesosAPIResponse, error) {
+	//glog.V(3).Infof("Get Succeed: %v\n", stateResp)
 	// UPDATE RESOURCE UNITS AFTER HTTP REQUEST for each slave
-	for idx := range respContent.Slaves {
-		glog.V(3).Infof("Number of slaves %d \n", len(respContent.Slaves))
-		s := &respContent.Slaves[idx]
+	for idx := range stateResp.Slaves {
+		glog.V(3).Infof("Number of slaves %d \n", len(stateResp.Slaves))
+		s := &stateResp.Slaves[idx]
 		s.Resources.Mem = s.Resources.Mem * float64(1024)		// TODO: convert units for mem only?
 		s.UsedResources.Mem = s.UsedResources.Mem * float64(1024)
 		s.OfferedResources.Mem = s.OfferedResources.Mem * float64(1024)
-		glog.V(3).Infof("=======> SLAVE idk: %d name: %s, mem: %.2f, cpu: %.2f, disk: %.2f \n", idx, s.Name, s.Resources.Mem, s.Resources.CPUs, s.Resources.Disk)
+		glog.Infof("=======> SLAVE idk: %d name: %s, mem: %.2f, cpu: %.2f, disk: %.2f \n", idx, s.Name, s.Resources.Mem, s.Resources.CPUs, s.Resources.Disk)
 	}
 
-	if err != nil {
-		glog.Errorf("Error getting response: %s", err)
-		return nil, err
-	}
-
-	glog.V(3).Infof("Get Succeed: %v\n", respContent)
-
-	if respContent.Frameworks == nil {
+	if stateResp.Frameworks == nil {
 		glog.Errorf("Error getting Frameworks response")
 		return nil, errors.New("Error getting Frameworks response: %s")
 	}
-	/*
-		configFile, err := os.Open("task.json")
-		if err != nil {
-			fmt.Println("opening config file", err.Error())
-		}
-		var jsonTasks = new(util.MasterTasks)
 
-		jsonParser := json.NewDecoder(configFile)
-		if err = jsonParser.Decode(jsonTasks); err != nil {
-			fmt.Println("parsing config file", err.Error())
-		}
-		taskContent := jsonTasks
-	*/
+	// Map of Slave ID  and IP
+	stateResp.SlaveIdIpMap = make(map[string]string)
+	for _, slave := range stateResp.Slaves {
+		slaveIP := util.GetSlaveIP(slave)
+		stateResp.SlaveIdIpMap[slave.Id] = slaveIP
+	}
 
+	// Parse the Frameworks to get the list of all Tasks across all frameworks
 	//We pass the entire http response as the respContent object
-	taskContent, err := handler.parseAPITasksResponse(respContent)
+	taskContent, err := handler.parseAPITasksResponse(stateResp)
 	if err != nil {
 		glog.Errorf("Error getting response: %s", err)
 		return nil, err
 	}
 	glog.V(3).Infof("Number of tasks \n", len(taskContent.Tasks))
 
-	// For each task, convert Mem units
-	for j := range taskContent.Tasks {
-		t := taskContent.Tasks[j]
-		// MEM UNITS KB
-		t.Resources.Mem = t.Resources.Mem * float64(1024)
-		//	fmt.Printf("----> tasks from mesos: # %d, name : %s, state: %s\n", j, t.Name, t.State)
-		//	glog.V(3).Infof("=======> TASK name: %s, mem: %.2f, cpu: %.2f, disk: %.2f \n", t.Name, t.Resources.Mem, t.Resources.CPUs, t.Resources.Disk)
+	stateResp.TaskMasterAPI = *taskContent
 
-	}
-	respContent.TaskMasterAPI = *taskContent
+	// Cluster
+	stateResp.Cluster.MasterIP = handler.clientConf.MasterIP
+	stateResp.Cluster.ClusterName = stateResp.ClusterName
 
-	//Marathon
-	fullUrlM := "http://" + handler.clientConf.FrameworkIP + ":" + handler.clientConf.FrameworkPort + "/v2/apps"
-	glog.V(4).Infof("The full Url is ", fullUrlM)
+	// stateResp.MApps = frameworkResp	//TODO:
 
-	reqM, err := http.NewRequest("GET", fullUrlM, nil)
+	// TODO: related to metrics
+	//// STATS
+	//var mapTaskRes map[string]util.Statistics
+	//mapTaskRes = make(map[string]util.Statistics)
+	//var mapSlaveUse map[string]*util.CalculatedUse
+	//mapSlaveUse = make(map[string]*util.CalculatedUse)
+	//var mapTaskUse map[string]*util.CalculatedUse
+	//mapTaskUse = make(map[string]*util.CalculatedUse)
+	//var ports_slaves = []string{}
+	//var allports []string
+	//allports = make([]string, 1)
+	//
+	//// Get Metrics for each slave or agent
+	//for i := range stateResp.Slaves {
+	//	s := stateResp.Slaves[i]
+	//	someports, err := handler.monitorSlaveStatistics(s, handler.taskUseMap, mapTaskRes, mapSlaveUse, mapTaskUse, ports_slaves)
+	//	if err != nil {
+	//		glog.Errorf("Error getting use data for slave %s \n", s.Name)
+	//		continue
+	//	}
+	//	for _, someport := range someports {
+	//		allports = append(allports, someport)
+	//	}
+	//} // slave loop
+	//
+	//glog.V(3).Info("--------------=======> ALL PORTS: %+v\n\n", allports)
+	//stateResp.AllPorts = allports
+	//// map task to resources
+	//handler.taskUseMap = mapTaskUse
+	//handler.slaveUseMap = mapSlaveUse
+	//stateResp.MapTaskStatistics = mapTaskRes
+	//stateResp.SlaveUseMap = mapSlaveUse
 
-	if err != nil {
-		glog.Errorf("GET request creation for url: %s failed \n", fullUrlM)
-		return nil, err
-	}
-
-	//if handler.clientConf.DCOS {
-	//	reqM.Header.Add("content-type", "application/json")
-	//	reqM.Header.Add("authorization", "token="+handler.clientConf.Token)
-	//}
-
-	glog.V(4).Infof("%+v", reqM)
-	clientM := &http.Client{}
-	respM, err := clientM.Do(reqM)
-	if err != nil {
-		glog.Errorf("Error getting response from Marathon: %s \n", err)
-		return nil, err
-	}
-	defer respM.Body.Close()
-
-	marathonRespContent, err := handler.parseMarathonResponse(respM)
-
-	if err != nil {
-		glog.Errorf("Error parsing response form Marathon: %s \n", err)
-		return nil, err
-	}
-
-	glog.V(3).Infof("Marathon Get Succeed: %v\n", marathonRespContent)
-
-	respContent.MApps = marathonRespContent
-
-	// STATS
-	var mapTaskRes map[string]util.Statistics
-	mapTaskRes = make(map[string]util.Statistics)
-	var mapSlaveUse map[string]*util.CalculatedUse
-	mapSlaveUse = make(map[string]*util.CalculatedUse)
-	var mapTaskUse map[string]*util.CalculatedUse
-	mapTaskUse = make(map[string]*util.CalculatedUse)
-	var ports_slaves = []string{}
-	var allports []string
-	allports = make([]string, 1)
-
-	// Get Metrics for each slave or agent
-	for i := range respContent.Slaves {
-		s := respContent.Slaves[i]
-		someports, err := handler.monitorSlaveStatistics(s, handler.taskUseMap, mapTaskRes, mapSlaveUse, mapTaskUse, ports_slaves)
-		if err != nil {
-			glog.Errorf("Error getting use data for slave %s \n", s.Name)
-			continue
+	for _, framework := range stateResp.Frameworks {
+		glog.Infof("Framework : ", framework.Name + "::" + framework.Hostname)
+		for _, task := range framework.Tasks {
+			glog.Infof("	Task : %s", task.Name)
 		}
-		for _, someport := range someports {
-			allports = append(allports, someport)
-		}
-	} // slave loop
+	}
 
-	glog.V(3).Info("--------------=======> ALL PORTS: %+v\n\n", allports)
-	respContent.AllPorts = allports
-	// map task to resources
-	handler.taskUseMap = mapTaskUse
-	handler.slaveUseMap = mapSlaveUse
-	respContent.MapTaskStatistics = mapTaskRes
-	respContent.SlaveUseMap = mapSlaveUse
-	respContent.Cluster.MasterIP = handler.clientConf.MasterIP
-	respContent.Cluster.ClusterName = respContent.ClusterName
+	for _, slave := range stateResp.Slaves {
+		glog.Infof("Slave : %s", slave.Name + "::" + slave.Pid)
+	}
 
-	return respContent, nil
+	return stateResp, nil
 }
 
-func (handler *MesosDiscoveryClient) monitorSlaveStatistics(s util.Slave, previousUseMap map[string]*util.CalculatedUse, mapTaskRes map[string]util.Statistics, mapSlaveUse map[string]*util.CalculatedUse, mapTaskUse map[string]*util.CalculatedUse, ports_slaves []string) ([]string, error) {
+func (handler *MesosDiscoveryClient) monitorSlaveStatistics(s util.Slave,
+								previousUseMap map[string]*util.CalculatedUse,
+								mapTaskRes map[string]util.Statistics,
+								mapSlaveUse map[string]*util.CalculatedUse,
+								mapTaskUse map[string]*util.CalculatedUse,
+								ports_slaves []string) ([]string, error) {
 	fullUrl := "http://" + util.GetSlaveIP(s) + ":" + handler.clientConf.SlavePort + "/monitor/statistics.json"
 
 	req, err := http.NewRequest("GET", fullUrl, nil)
@@ -589,243 +526,29 @@ func (handler *MesosDiscoveryClient) parseAPITasksResponse(resp *util.MesosAPIRe
 	if resp == nil {
 		return nil, errors.New("Task information response received is nil")
 	}
-	glog.V(3).Infof(" Number of frameworks is %d\n", len(resp.Frameworks))
+	glog.V(3).Infof("[MesosDiscoveryClient] Number of frameworks is %d\n", len(resp.Frameworks))
 
 	allTasks := make([]util.Task, 0)
-	for i := range resp.Frameworks {
-		if resp.Frameworks[i].Tasks != nil {
-			ftasks := resp.Frameworks[i].Tasks
-			for j := range ftasks {
-				allTasks = append(allTasks, ftasks[j])
+	for _, framework := range resp.Frameworks {
+		if framework.Tasks != nil {
+			ftasks := framework.Tasks
+			for _, task := range ftasks {
+				allTasks = append(allTasks, task)
 			}
-			glog.V(3).Infof(" Number of tasks is %d\n", len(resp.Frameworks[i].Tasks))
+			glog.Infof("[MesosDiscoveryClient] Number of tasks in framework %s is %d", framework.Name, len(framework.Tasks))
 		}
 	}
 	tasksObj := &util.MasterTasks{
 		Tasks: allTasks,
 	}
+
+	// For each task, convert Mem units
+	for j := range tasksObj.Tasks {
+		t := tasksObj.Tasks[j]
+		// MEM UNITS KB
+		t.Resources.Mem = t.Resources.Mem * float64(1024)
+
+	}
 	return tasksObj, nil
 }
 
-func (handler *MesosDiscoveryClient) parseAPIStateResponse(resp *http.Response) (*util.MesosAPIResponse, error) {
-	glog.V(4).Infof("----> in parseAPIStateResponse")
-	if resp == nil {
-		return nil, errors.New("Response sent from mesos/DCOS master is nil")
-	}
-
-	content, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		glog.Errorf("Error after ioutil.ReadAll: %s", err)
-		return nil, err
-	}
-
-	glog.V(4).Infof("response content is %s", string(content))
-	byteContent := []byte(content)
-	var jsonMesosMaster = new(util.MesosAPIResponse)
-	err = json.Unmarshal(byteContent, &jsonMesosMaster)
-	if err != nil {
-		glog.Errorf("error in json unmarshal : %s", err)
-		return nil, errors.New("Error in json unmarshal")
-	}
-	return jsonMesosMaster, nil
-}
-
-func (handler *MesosDiscoveryClient) parseMarathonResponse(resp *http.Response) (*util.MarathonApps, error) {
-	glog.V(4).Infof("----> in parseAPICallResponse")
-	if resp == nil {
-		return nil, fmt.Errorf("response sent in is nil")
-	}
-	glog.V(3).Infof(" from glog response body is %s", resp.Body)
-
-	content, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		glog.Errorf("Error after ioutil.ReadAll: %s", err)
-		return nil, err
-	}
-
-	glog.V(4).Infof("response content is %s", string(content))
-	byteContent := []byte(content)
-	var jsonMarathonMaster = new(util.MarathonApps)
-	err = json.Unmarshal(byteContent, &jsonMarathonMaster)
-	if err != nil {
-		glog.Errorf("error in json unmarshal : %s", err)
-		return nil, err
-	}
-	for i, app := range jsonMarathonMaster.Apps {
-		newN := app.Name[1:len(app.Name)]
-		jsonMarathonMaster.Apps[i].Name = newN
-	}
-	glog.V(3).Infof(" MARATHON resp %+v", jsonMarathonMaster)
-	return jsonMarathonMaster, nil
-}
-
-func (handler *MesosDiscoveryClient) ParseNode(m *util.MesosAPIResponse, slaveUseMap map[string]*util.CalculatedUse) ([]*proto.EntityDTO, error) {
-	glog.V(4).Infof("in ParseNode\n")
-	result := []*proto.EntityDTO{}
-	for i := range m.Slaves {
-		s := m.Slaves[i]
-		// build sold commodities
-		slaveProbe := &NodeProbe{
-			MasterState:   m,
-			Cluster:       &m.Cluster,
-			AllSlavePorts: m.AllPorts,
-		}
-		commoditiesSold, err := slaveProbe.CreateCommoditySold(&s, slaveUseMap)
-		if err != nil {
-			glog.Errorf("error is : %s\n", err)
-			return result, err
-		}
-		slaveIP := util.GetSlaveIP(s)
-		m.SlaveIdIpMap[s.Id] = slaveIP
-		entityDTO := buildVMEntityDTO(slaveIP, s.Id, s.Name, commoditiesSold)
-		result = append(result, entityDTO)
-	}
-	glog.V(4).Infof(" entity DTOs : %d\n", len(result))
-	return result, nil
-}
-
-func buildVMEntityDTO(slaveIP, nodeID, displayName string, commoditiesSold []*proto.CommodityDTO) *proto.EntityDTO {
-	entityDTOBuilder := builder.NewEntityDTOBuilder(proto.EntityDTO_VIRTUAL_MACHINE, nodeID)
-	entityDTOBuilder.DisplayName(displayName)
-	entityDTOBuilder.SellsCommodities(commoditiesSold)
-	// TODO stitch
-	ipAddress := slaveIP //nodeProbe.getIPForStitching(displayName)
-	ipPropName := "IP"
-	ipProp := &proto.EntityDTO_EntityProperty{
-		Namespace: &DEFAULT_NAMESPACE,
-		Name: &ipPropName,
-		Value: &ipAddress,
-	}
-	entityDTOBuilder = entityDTOBuilder.WithProperty(ipProp)	//"IP", ipAddress)
-	glog.V(4).Infof("Parse node: The ip of vm to be reconcile with is %s", ipAddress)
-	metaData := generateReconcilationMetaData()
-
-	entityDTOBuilder = entityDTOBuilder.ReplacedBy(metaData)
-	entityDto, _ := entityDTOBuilder.Create()
-	return entityDto
-}
-
-func generateReconcilationMetaData() *proto.EntityDTO_ReplacementEntityMetaData {
-	replacementEntityMetaDataBuilder := builder.NewReplacementEntityMetaDataBuilder()
-	replacementEntityMetaDataBuilder.Matching("IP")
-	replacementEntityMetaDataBuilder.PatchSelling(proto.CommodityDTO_CPU_ALLOCATION)
-	replacementEntityMetaDataBuilder.PatchSelling(proto.CommodityDTO_MEM_ALLOCATION)
-	replacementEntityMetaDataBuilder.PatchSelling(proto.CommodityDTO_STORAGE_ALLOCATION)
-	replacementEntityMetaDataBuilder.PatchSelling(proto.CommodityDTO_CLUSTER)
-	replacementEntityMetaDataBuilder.PatchSelling(proto.CommodityDTO_VCPU)
-	replacementEntityMetaDataBuilder.PatchSelling(proto.CommodityDTO_VMEM)
-	replacementEntityMetaDataBuilder.PatchSelling(proto.CommodityDTO_APPLICATION)
-	replacementEntityMetaDataBuilder.PatchSelling(proto.CommodityDTO_VMPM_ACCESS)
-	metaData := replacementEntityMetaDataBuilder.Build()
-	return metaData
-}
-
-func (handler *MesosDiscoveryClient) ParseTask(m *util.MesosAPIResponse, taskUseMap map[string]*util.CalculatedUse) ([]*proto.EntityDTO, error) {
-	result := []*proto.EntityDTO{}
-	taskList := m.TaskMasterAPI.Tasks
-
-	builder := &TaskBuilder{
-		// map
-	}
-	builder.BuildConstraintMap(m.MApps.Apps)
-	for i := range taskList {
-		glog.V(3).Infof("entire Task ====================> %+v", taskList[i])
-		if _, ok := taskUseMap[taskList[i].Id]; !ok {
-			continue
-		}
-		taskProbe := &TaskProbe{
-			Task:    &taskList[i],
-			Cluster: &m.Cluster,
-		}
-		if taskProbe.Task.State != "TASK_RUNNING" {
-			glog.V(4).Infof("=====> not running task is %s and state %s\n", taskProbe.Task.Name, taskProbe.Task.State)
-			continue
-		}
-		glog.V(4).Infof("=====> task is %s and state %s\n", taskProbe.Task.Name, taskProbe.Task.State)
-
-		builder.SetTaskConstraints(taskProbe)
-		//ipAddress := slaveIdIpMap[taskProbe.Task.SlaveId]
-		//usedResources := taskProbe.GetUsedResourcesForTask(ipAddress)
-		taskResource, err := taskProbe.GetTaskResourceStat(m.MapTaskStatistics, taskProbe.Task, taskUseMap)
-		if err != nil {
-			glog.Errorf("error is : %s", err)
-		}
-		commoditiesSoldContainer := taskProbe.GetCommoditiesSoldByContainer(taskProbe.Task, taskResource)
-		commoditiesBoughtContainer := taskProbe.GetCommoditiesBoughtByContainer(taskProbe.Task, taskResource)
-
-		entityDTO, _ := buildTaskContainerEntityDTO(m.SlaveIdIpMap, taskProbe.Task, commoditiesSoldContainer, commoditiesBoughtContainer)
-
-		result = append(result, entityDTO)
-
-		commoditiesSoldApp := taskProbe.GetCommoditiesSoldByApp(taskProbe.Task, taskResource)
-		commoditiesBoughtApp := taskProbe.GetCommoditiesBoughtByApp(taskProbe.Task, taskResource)
-
-		entityDTO = buildTaskAppEntityDTO(m.SlaveIdIpMap, taskProbe.Task, commoditiesSoldApp, commoditiesBoughtApp)
-		result = append(result, entityDTO)
-	}
-	glog.V(4).Infof("Task entity DTOs : %d", len(result))
-	return result, nil
-}
-
-func buildTaskAppEntityDTO(slaveIdIp map[string]string, task *util.Task, commoditiesSold []*proto.CommodityDTO, commoditiesBoughtMap map[*builder.ProviderDTO][]*proto.CommodityDTO) *proto.EntityDTO {
-	appEntityType := proto.EntityDTO_APPLICATION
-	id := task.Name + "::" + "APP:" + task.Id
-	dispName := "APP:" + task.Name
-	entityDTOBuilder := builder.NewEntityDTOBuilder(appEntityType, id+"foo")
-	entityDTOBuilder = entityDTOBuilder.DisplayName(dispName)
-
-	entityDTOBuilder.SellsCommodities(commoditiesSold)
-
-	for provider, commodities := range commoditiesBoughtMap {
-		entityDTOBuilder.Provider(provider)
-		entityDTOBuilder.BuysCommodities(commodities)
-	}
-
-	entityDto, _ := entityDTOBuilder.Create()
-
-	//appType := task.Name
-	//
-	//ipAddress := slaveIdIp[task.SlaveId] //this.getIPAddress(host, nodeName)
-
-	//appData := &proto.EntityDTO_ApplicationData{
-	//	Type:      &appType,
-	//	IpAddress: &ipAddress,
-	//}
-	//// entityDto.ApplicationData = appData // TODO:
-	return entityDto
-
-}
-
-// Build entityDTO that contains all the necessary info of a pod.
-func buildTaskContainerEntityDTO(slaveIdIpMap map[string]string, task *util.Task, commoditiesSold, commoditiesBought []*proto.CommodityDTO) (*proto.EntityDTO, error) {
-	taskName := task.Name
-	id := task.Id
-	dispName := task.Name
-
-	entityDTOBuilder := builder.NewEntityDTOBuilder(proto.EntityDTO_CONTAINER, id)
-	entityDTOBuilder.DisplayName(dispName)
-
-	slaveId := task.SlaveId
-	if slaveId == "" {
-		return nil, fmt.Errorf("Cannot find the hosting slave ID for task %s", taskName)
-	}
-	glog.V(4).Infof("Pod %s is hosted on %s", dispName, slaveId)
-
-	entityDTOBuilder.SellsCommodities(commoditiesSold)
-	//	providerUid := nodeUidTranslationMap[slaveId]
-	providerDto := builder.CreateProvider(proto.EntityDTO_VIRTUAL_MACHINE, slaveId)
-	entityDTOBuilder = entityDTOBuilder.Provider(providerDto)
-	entityDTOBuilder.BuysCommodities(commoditiesBought)
-	ipAddress := slaveIdIpMap[task.SlaveId]
-	ipPropName := "IP"
-	ipProp := &proto.EntityDTO_EntityProperty{
-		Namespace: &DEFAULT_NAMESPACE,
-		Name: &ipPropName,
-		Value: &ipAddress,
-	}
-	entityDTOBuilder = entityDTOBuilder.WithProperty(ipProp)		//"ipAddress", ipAddress)
-	glog.V(3).Infof("Pod %s will be stitched to VM with IP %s", dispName, ipAddress)
-
-	entityDto, _ := entityDTOBuilder.Create()
-	return entityDto, nil
-}
