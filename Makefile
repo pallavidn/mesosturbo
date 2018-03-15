@@ -3,6 +3,9 @@ OUTPUT_DIR=./_output
 SOURCE_DIRS = cmd pkg
 PACKAGES := go list ./... | grep -v /vendor | grep -v /out
 
+product: clean
+	env GOOS=linux GOARCH=amd64 go build -o ${OUTPUT_DIR}/mesosturbo.linux ./cmd/
+
 build: clean
 	go build -o ${OUTPUT_DIR}/mesosturbo ./cmd/
 

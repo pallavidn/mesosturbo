@@ -2,8 +2,8 @@
 Once deployed, the Mesosturbo service enables you to give Turbonomic visibility into a Mesos cluster. This cluster can be located in either a public or private datacenter. Mesosturbo will be deployed as a container on Agent nodes.
 
 ### Prerequisites
-* Turbonomic 5.9+
-* Running either Mesos Apache 0.28 or later or running Mesosphere DCOS 1.8
+* Turbonomic 6.1
+* Running either Mesos Apache 1.2 or later or running Mesosphere DCOS 1.8
 
 ### Step One: Deploying the Mesosturbo Docker Container Image
 > NOTE: Ensure that the Turbonomic Mesosturbo container image on DockerHub is accessible to the Marathon service in the Mesos Cluster.
@@ -11,21 +11,21 @@ Once deployed, the Mesosturbo service enables you to give Turbonomic visibility 
 * Know your Mesos Master IP and port
 * Marathon service is available in the Mesos Cluster for deploying applications.
 * Marathon service has internet access to the DockerHub registry where the Turbonomic Mesosturbo container image resides.
-* Install Operations Manager 5.9+ and know its IP
+* Install Operations Manager 6.1 and know its IP
 * Know the username and password for the Rest API user for Operations Manager.
 
 Containers are deployed by Marathon Service running in Mesos. 
 
 ##### Mesosturbo Container Definition for deploying in Mesosphere DC/OS
 
-A copy of the deploy config can be downloaded from [here](deploy_dcos_mesosturbo_5.9_0.json)
+A copy of the deploy config can be downloaded from [here](deploy_dcos_mesosturbo_6_1_0.json)
 
 ```yaml
 {
   "id": "mesosturbo",
   "container": {
     "docker": {
-      "image": "vmturbo/mesosturbo:5.9.0",
+      "image": "vmturbo/mesosturbo:6.1.0",
        "forcePullImage": true
     },
     "type": "DOCKER",
@@ -56,14 +56,14 @@ A copy of the deploy config can be downloaded from [here](deploy_dcos_mesosturbo
 
 ##### Mesosturbo Container Definition for deploying in Apache Mesos
 
-A copy of the deploy config can be downloaded from [here](deploy_apache_mesosturbo_5.9_0.json)
+A copy of the deploy config can be downloaded from [here](deploy_apache_mesosturbo_6_1_0.json)
 
 ```yaml
 {
   "id": "mesosturbo",
   "container": {
     "docker": {
-      "image": "vmturbo/mesosturbo:5.9.0",
+      "image": "vmturbo/mesosturbo:6.1.0",
        "forcePullImage": true
     },
     "type": "DOCKER",

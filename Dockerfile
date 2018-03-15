@@ -8,7 +8,7 @@ FROM ubuntu
 MAINTAINER Pallavi Debnath <pallavi.debnath@turbonomic.com>
 
 
-ADD _output/mesosturbo /bin/mesosturbo
+ADD _output/mesosturbo.linux /bin/mesosturbo
 
 
 ENTRYPOINT ["/bin/mesosturbo"]
